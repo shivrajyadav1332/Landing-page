@@ -1,0 +1,108 @@
+import sqlite3
+from datetime import datetime
+
+# Connect DB
+conn = sqlite3.connect("inventory.db")
+cur = conn.cursor()
+
+# Create tables
+cur.execute("""
+CREATE TABLE IF NOT EXISTS products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    price REAL,
+    stock INTEGER
+)
+""")
+
+cur.execute("""
+CREATE TABLE IF NOT EXISTS sales (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER,
+    quantity INTEGER,
+    total REAL,
+    date TEXT
+)
+""")
+conn.commit()
+
+# Functions
+def add_product(name, price, stock):
+    cur.execute("INSERT INTO products (name, price, stock) VALUES (?, ?, ?)", (name, price, stock))
+    conn.commit()
+    print("✅ Product Added")
+
+def update_stock(pid, qty):
+    cur.execute("UPDATE products SET stock = stock - ? WHERE id=?", (qty, pid))
+    conn.commit()
+
+def generate_bill(cart):
+    total = 0
+    print("\n===== BILL RECEIPT =====")
+    for pid, qty in cart.items():
+        cur.execute("SELECT name, price, stock FROM products WHERE id=?", (pid,))
+        row = cur.fetchone()
+        if row and row[2] >= qty:
+            pname, price, stock = row
+            amount = price * qty
+            total += amount
+            print(f"{pname} x{qty} = {amount}")
+            update_stock(pid, qty)
+            cur.execute("INSERT INTO sales (product_id, quantity, total, date) VALUES (?, ?, ?, ?)",
+                        (pid, qty, amount, datetime.now().strftime("%Y-%m-%d")))
+        else:
+            print(f"❌ Not enough stock for Product ID {pid}")
+    conn.commit()
+    print("------------------------")
+    print(f"TOTAL: {total}\n")
+
+def show_sales_report():
+    print("\n===== SALES REPORT =====")
+    cur.execute("SELECT date, SUM(total) FROM sales GROUP BY date")
+    for row in cur.fetchall():
+        print(f"Date: {row[0]} | Revenue: {row[1]}")
+    cur.execute("""
+        SELECT p.name, SUM(s.quantity) as sold_qty 
+        FROM sales s JOIN products p ON s.product_id = p.id 
+        GROUP BY p.id ORDER BY sold_qty DESC LIMIT 1
+    """)
+    row = cur.fetchone()
+    if row:
+        print(f"🔥 Best Seller: {row[0]} ({row[1]} sold)")
+
+# CLI Menu
+def menu():
+    while True:
+        print("\n===== INVENTORY SYSTEM =====")
+        print("1. Add Product")
+        print("2. Generate Bill")
+        print("3. View Sales Report")
+        print("4. Exit")
+        ch = input("Enter choice: ")
+
+        if ch == "1":
+            name = input("Enter product name: ")
+            price = float(input("Enter price: "))
+            stock = int(input("Enter stock: "))
+            add_product(name, price, stock)
+
+        elif ch == "2":
+            cart = {}
+            while True:
+                pid = int(input("Enter Product ID (0 to finish): "))
+                if pid == 0:
+                    break
+                qty = int(input("Enter Quantity: "))
+                cart[pid] = qty
+            generate_bill(cart)
+
+        elif ch == "3":
+            show_sales_report()
+
+        elif ch == "4":
+            print("👋 Exiting...")
+            break
+        else:
+            print("❌ Invalid choice!")
+
+menu()
